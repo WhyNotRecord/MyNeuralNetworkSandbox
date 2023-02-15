@@ -3,59 +3,66 @@
 
 using namespace mlpack;
 
-
-template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m, bool print_size)
+//TODO print second last column-
+template<typename eT> int normal_print(std::ostream& o, const arma::Mat<eT> &m, bool print_size)
 {
 
     const arma::arma_ostream_state stream_state(o);
-    int colWidth = 12;
-
     eT max = m.max();
-    o.precision(max > 99 ? 3 : 5);
+    int colWidth = max > 999999999999 ? 15 : 12;
+    int ellipsisWidth = 6;
+
+    o.precision(max > 99 ? max > 999999999 ? 1 : 3 : 5);
     o.setf(std::ios::fixed, std::ios::floatfield);
 
     if (print_size)
     {
-        o << "[matrix size: " << m.n_rows << 'x' << m.n_cols << "]\n";
+        o << "[matrix size: " << m.n_rows << 'x' << m.n_cols << "]" << std::endl;
     }
 
     if (m.n_elem == 0) {
         o.flush();
         stream_state.restore(o);
-        return;
+        return colWidth;
     }
 
 
-    if ((m.n_rows <= 5) && (m.n_cols <= 5)) { arma::arma_ostream::print(o, m, true); return; }
+    if ((m.n_rows <= 5) && (m.n_cols <= 5)) { 
+        arma::arma_ostream::print(o, m, true); 
+        return colWidth;
+    }
 
     const bool print_row_ellipsis = (m.n_rows >= 6);
     const bool print_col_ellipsis = (m.n_cols >= 6);
 
     if ((print_row_ellipsis == true) && (print_col_ellipsis == true))
     {
-        arma::Mat<eT> X(4, 4, arma::arma_nozeros_indicator());
+        arma::Mat<eT> X(5, 5, arma::arma_nozeros_indicator());
 
         X(arma::span(0, 2), arma::span(0, 2)) = m(arma::span(0, 2), arma::span(0, 2));  // top left submatrix
-        X(3, arma::span(0, 2)) = m(m.n_rows - 1, arma::span(0, 2));  // truncated last row
-        X(arma::span(0, 2), 3) = m(arma::span(0, 2), m.n_cols - 1);  // truncated last column
-        X(3, 3) = m(m.n_rows - 1, m.n_cols - 1);  // bottom right element
+        X(arma::span(3, 4), arma::span(0, 2)) = m(arma::span(m.n_rows - 2, m.n_rows - 1), arma::span(0, 2));  // truncated last row
+        X(arma::span(0, 2), arma::span(3, 4)) = m(arma::span(0, 2), arma::span(m.n_cols - 2, m.n_cols - 1));  // truncated last column
+        X(3, 3) = m(m.n_rows - 2, m.n_cols - 2);
+        X(4, 4) = m(m.n_rows - 1, m.n_cols - 1);  // bottom right element
 
         const std::streamsize cell_width = colWidth;
 
         for (long row = 0; row <= 2; ++row)
         {
-            for (long col = 0; col <= 2; ++col)
+            for (long col = 0; col <= 2; ++col)//first two cols
             {
                 o.width(cell_width);
                 arma::arma_ostream::print_elem(o, X.at(row, col), true);
             }
 
-            o.width(6);
+            o.width(ellipsisWidth);
             o << "...";
 
-            o.width(cell_width);
-            arma::arma_ostream::print_elem(o, X.at(row, 3), true);
-            o << '\n';
+            for (long col = 3; col <= 4; ++col) {// last two cols
+                o.width(cell_width);
+                arma::arma_ostream::print_elem(o, X.at(row, col), true);
+            }
+            o << std::endl;
         }
 
         for (long col = 0; col <= 2; ++col)
@@ -64,11 +71,11 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
             o << ':';
         }
 
-        o.width(6);
+        o.width(ellipsisWidth);
         o << "...";
 
         o.width(cell_width);
-        o << ':' << '\n';
+        o << ':' << std::endl;
 
         const long row = 3;
         {
@@ -78,12 +85,14 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
                 arma::arma_ostream::print_elem(o, X.at(row, col), true);
             }
 
-            o.width(6);
+            o.width(ellipsisWidth);
             o << "...";
 
-            o.width(cell_width);
-            arma::arma_ostream::print_elem(o, X.at(row, 3), true);
-            o << '\n';
+            for (long col = 3; col <= 4; ++col) {// last two cols
+                o.width(cell_width);
+                arma::arma_ostream::print_elem(o, X.at(row, col), true);
+            }
+            o << std::endl;
         }
     }
 
@@ -105,7 +114,7 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
                 arma::arma_ostream::print_elem(o, X.at(row, col), true);
             }
 
-            o << '\n';
+            o << std::endl;
         }
 
         for (long col = 0; col < m.n_cols; ++col)
@@ -115,7 +124,7 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
         }
 
         o.width(cell_width);
-        o << '\n';
+        o << std::endl;
 
         const long row = 3;
         {
@@ -126,16 +135,16 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
             }
         }
 
-        o << '\n';
+        o << std::endl;
     }
 
 
     if ((print_row_ellipsis == false) && (print_col_ellipsis == true))
     {
-        arma::Mat<eT> X(m.n_rows, 4, arma::arma_nozeros_indicator());
+        arma::Mat<eT> X(m.n_rows, 5, arma::arma_nozeros_indicator());
 
         X(arma::span::all, arma::span(0, 2)) = m(arma::span::all, arma::span(0, 2));  // left
-        X(arma::span::all, 3) = m(arma::span::all, m.n_cols - 1);  // right
+        X(arma::span::all, arma::span(3, 4)) = m(arma::span::all, arma::span(m.n_cols - 2, m.n_cols - 1));  // right
 
         const std::streamsize cell_width = colWidth;
 
@@ -147,21 +156,79 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m,
                 arma::arma_ostream::print_elem(o, X.at(row, col), true);
             }
 
-            o.width(6);
+            o.width(ellipsisWidth);
             o << "...";
 
-            o.width(cell_width);
-            arma::arma_ostream::print_elem(o, X.at(row, 3), true);
-            o << '\n';
+            for (long col = 3; col <= 4; ++col) {// last two cols
+                o.width(cell_width);
+                arma::arma_ostream::print_elem(o, X.at(row, col), true);
+            }
+            o << std::endl;
         }
     }
 
 
     o.flush();
     stream_state.restore(o);
+    return colWidth;
 }
 
-template void normal_print<double>(std::ostream& o, const arma::Mat<double> &m, bool print_size);
+template int normal_print<double>(std::ostream& o, const arma::Mat<double> &m, bool print_size);
+
+template<typename eT> void normal_print(std::ostream& o, const arma::Cube<eT>& c, uint16_t slices, float bound, bool print_size) {
+    if (slices < 1)
+        slices = 1;
+
+    if (slices > c.n_slices)
+        slices = c.n_slices;
+
+    if (bound < 0.1f || bound > 0.9f)
+        bound = 0.5f;
+
+    const arma::arma_ostream_state stream_state(o);
+
+    if (print_size)
+    {
+        o << "[cube size: " << c.n_rows << 'x' << c.n_cols << 'x' << c.n_slices << "]" << std::endl;
+    }
+    int boundSlice = slices * bound;
+    int colWidth = 3;
+
+    for (int i = 0; i < boundSlice; i++) {
+        o << "Slice " << i;
+        if (!print_size)
+            o << ":" << std::endl;
+        else
+            o << " ";
+        colWidth = normal_print(o, c.slice(i), print_size);
+    }
+    if (c.n_slices > slices) {
+        for (int i = 0; i < std::fminl(6, c.n_cols); i++) {
+            if (c.n_cols > 6 && i == 3) {
+                o.width(6);
+                o << ":::";
+            }
+            else {
+                o.width(colWidth);
+                o << " ::: ";
+            }
+        }
+        o << std::endl;
+    }
+    for (int i = c.n_slices - (slices - boundSlice); i < c.n_slices; i++) {
+        o << "Slice " << i;
+        if (!print_size)
+            o << ":" << std::endl;
+        else
+            o << " ";
+        normal_print(o, c.slice(i), print_size);
+    }
+
+    o.flush();
+    stream_state.restore(o);
+}
+
+template void normal_print<double>(std::ostream& o, const arma::Cube<double> &c, uint16_t slices, float bound, bool print_size);
 
 std::tuple<arma::mat, arma::mat> loadDataSet(std::string filename, float testDataBound) {
     std::string dataFile = std::string(filename);
@@ -317,6 +384,67 @@ std::array<double, 3> calculateDifferencePrecents(arma::cube& control, arma::cub
     }
     result[1] /= control.n_elem;
     return result;
+}
+
+//template<typename eT> std::array<double, 3> calculateDifferencePrecents(arma::subview_cube<eT>& control, arma::subview_cube<eT>& checking) {
+std::array<double, 3> calculateDifferencePrecents(arma::subview_cube<double> control, arma::subview_cube<double> checking) {
+    if (control.n_rows != checking.n_rows || control.n_cols != checking.n_cols || control.n_slices != checking.n_slices) {
+        std::cout << "ERROR: Cubes are of different sizes!" << std::endl;
+        return std::array<double, 3>();
+    }
+    std::array<double, 3> result = { 1000., 0., 0. };
+    for (int r = 0; r < control.n_rows; r++) {
+        for (int c = 0; c < control.n_cols; c++) {
+            for (int s = 0; s < control.n_slices; s++) {
+                /*double con = control(r, c, s), che = checking(r, c, s);
+                double tmp = con / 100.f;
+                tmp = std::fabsf(con - che) / tmp;
+                result[1] += tmp;*/
+                double tmp = control(r, c, s) / 100.f;
+                tmp = std::fabsf(control(r, c, s) - checking(r, c, s)) / tmp;
+                result[1] += tmp;
+                if (result[0] > tmp)
+                    result[0] = tmp;
+                if (result[2] < tmp)
+                    result[2] = tmp;
+            }
+        }
+    }
+    result[1] /= control.n_elem;
+    return result;
+}
+
+//template std::array<double, 3> calculateDifferencePrecents<double>(arma::subview_cube<double>& control, arma::subview_cube<double>& checking);
+
+
+std::array<double, 3> calculateDifferencePrecents(arma::mat& control, arma::mat& checking) {
+    if (control.n_rows != checking.n_rows || control.n_cols != checking.n_cols) {
+        std::cout << "ERROR: Matrices are of different sizes!" << std::endl;
+        return std::array<double, 3>();
+    }
+    std::array<double, 3> result = { 1000., 0., 0. };
+    for (int r = 0; r < control.n_rows; r++) {
+        for (int c = 0; c < control.n_cols; c++) {
+            double tmp = std::fabsf(control(r, c) - checking(r, c)) / control(r, c) * 100.f;
+            /*double tmp = control(r, c) / 100.f;
+            tmp = std::fabsf(control(r, c) - checking(r, c)) / tmp;*/
+            result[1] += tmp;
+            if (result[0] > tmp)
+                result[0] = tmp;
+            if (result[2] < tmp)
+                result[2] = tmp;
+        }
+    }
+    result[1] /= control.n_elem;
+    return result;
+}
+
+/*
+ * Function to calculate MSE for arma::cube.
+ */
+double ComputeMSE(arma::cube& pred, arma::cube& Y)
+{
+    return metric::SquaredEuclideanDistance::Evaluate(pred, Y) / (Y.n_elem);
 }
 
 FFN<> loadModel(std::string filename) {

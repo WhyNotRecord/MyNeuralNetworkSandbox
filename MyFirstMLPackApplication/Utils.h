@@ -6,7 +6,9 @@
 //#include <tuple>
 #include <mlpack/mlpack.hpp>
 
-template<typename eT> void normal_print(std::ostream& o, const arma::Mat<eT> &m, bool print_size);
+template<typename eT> int normal_print(std::ostream& o, const arma::Mat<eT> &m, bool print_size);
+
+template<typename eT> void normal_print(std::ostream& o, const arma::Cube<eT> &c, uint16_t slices, float bound = 0.75f, bool print_size = true);
 
 std::tuple<arma::mat, arma::mat> loadDataSet(std::string filename, float testDataBound = 0.75f);
 
@@ -18,7 +20,20 @@ std::tuple<arma::cube, arma::cube> preparePredictionCubes(arma::mat &valuesMatri
 
 std::tuple<arma::cube, arma::cube> preparePredictionCubes(arma::mat &valuesMatrix, int inputCount, int analCount = 100, int predictCount = 1, bool print = false);
 
-std::array<double, 3> calculateDifferencePrecents(arma::cube& c1, arma::cube& c2);
+std::array<double, 3> calculateDifferencePrecents(arma::cube& control, arma::cube& checking);
+
+/*template<typename eT>
+std::array<double, 3> calculateDifferencePrecents(arma::subview_cube<eT>& control, arma::subview_cube<eT>& checking);*/
+
+std::array<double, 3> calculateDifferencePrecents(arma::subview_cube<double> control, arma::subview_cube<double> checking);
+
+std::array<double, 3> calculateDifferencePrecents(arma::mat& control, arma::mat& checking);
+
+/*
+ * Function to calculate MSE for arma::cube.
+ */
+double ComputeMSE(arma::cube& pred, arma::cube& Y);
+
 
 mlpack::FFN<> loadModel(std::string filename);
 

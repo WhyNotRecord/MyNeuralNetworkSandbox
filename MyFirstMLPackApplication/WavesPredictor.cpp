@@ -4,21 +4,90 @@
 using namespace mlpack;
 using namespace ens;
 
-int WavesPredictor::simplePredict() {
-    int seqLen = 99;
-    int predLen = 2;
-    int analSeqCount = 3;
+//std::tuple<RNN<MeanSquaredError, HeInitialization>, AdamType<>> createModel(size_t inputSize, size_t outputSize, 
+RNN<MeanSquaredError, HeInitialization> createModel(std::ostream& o, size_t inputSize, size_t outputSize, AdamType<> optimizer,
+    int epochsCount, int neuronsCount, int additionalLayersCount, double dropout, arma::cube &trainCube, arma::cube &trainLabelsCube) {
+
+    // Так, функция активации ReLU даёт хорошие результаты точности в полносвязных слоях(Dense layers) и свёрточных слоях(Convolutional layers).
+     // А функция гиперболического тангенса Tahn наравне с функцией Sigmoid используются в рамках моделей LSTM(Long Short Term Memory).
+     //RNN<MeanSquaredError, HeInitialization> model(seqLen, true /* one response per sequence */);
+    RNN<MeanSquaredError, HeInitialization> model(inputSize, false /* few responses per sequence */);
+
+    //Dropout и BatchNorm (Layer Norm) между слоями
+    // LSTM -> Dropout -> Dense -> Softmax (вариант из лекций)
+    // LSTM -> Dropout -> LSTM -> Dropout -> Dense -> Softmax (вариант из лекций)
     // Number of cells in the LSTM (hidden layers in standard terms).
-    // NOTE: you may play with this variable in order to further optimize the
-    // model (as more cells are added, accuracy is likely to go up, but training
-    // time may take longer).
-    const int H1 = 25;
+    int layerSize = neuronsCount / (1 + additionalLayersCount);
+    for (int i = 0; i < additionalLayersCount; i++) {
+        /*model.Add<LSTM>(H1);
+        model.Add<LinearNoBias>(predLen);*/
+        model.Add<LSTM>(layerSize);
+        model.Add<Dropout>(dropout);
+        model.Add<LeakyReLU>();
+        //model.Add<Sigmoid>();
+        //model.Add<TanH>();
+    }
+
+    model.Add<LSTM>(layerSize);
+    model.Add<LeakyReLU>();
+    model.Add<Linear>(outputSize);
+
+    o << "Model created: " << additionalLayersCount + 1 << " layers, " << neuronsCount << " neurons, " << dropout << " dropout." << std::endl;
+
+    ens::PrintLoss printCB = ens::PrintLoss();
+    model.Train(trainCube, trainLabelsCube, optimizer,
+        Report(0.1),
+        // PrintLoss Callback prints loss for each epoch.
+        printCB,
+        // Progressbar Callback prints progress bar for each epoch.
+        //ens::ProgressBar(),
+        // Stops the optimization process if the loss stops decreasing
+        // or no improvement has been made. This will terminate the
+        // optimization once we obtain a minima on training set.
+        ens::EarlyStopAtMinLoss(epochsCount / 4));
+
+    //return std::make_tuple(model, optimizer);
+    return model;
+}
+
+template<typename OptimizerType>
+OptimizerType createOptimizer(std::ostream& o, int pointsCount, int epochsCount) {
+    //TODO pass as arguments
+    //int tolerance = -1;
+    int tolerance = 1e-8;
+    double stepSize = 0.0005;//learning rate (0.0005 seems to be the best value)
+    size_t batchSize = 32;//rule of thumb with regard to batch size is that it should be as big as memory permits but at most 1% of the number of observations.
+    double meanSquareGradParamInit = 0.00000001;
+
+    //each epoch will be = number of points / batchSize
+    size_t maxPointIterations = epochsCount * pointsCount;
+
+    //StandardSGD optimizer(stepSize, batchSize, maxPointIterations, tolerance);
+    ens::AdamType<ens::AdamUpdate> optimizer(stepSize, batchSize, 0.9, 0.999, meanSquareGradParamInit, maxPointIterations, tolerance);
+    //ens::AdamType<ens::RMSPropUpdate> optimizer(stepSize, batchSize, 0.9, 0.999, meanSquareGradParamInit, maxPointIterations, tolerance);
+    //ens::RMSProp optimizer(stepSize, batchSize, 0.99, meanSquareGradParamInit, maxPointIterations, tolerance);
+    o << "Optimizer params: " << epochsCount << " epochs, " << stepSize << " learning rate, " << batchSize << " batchsize." << std::endl;
+    return optimizer;
+}
+
+//template AdamType<> createOptimizer<AdamType<>>(std::ostream& o, int pointsCount);
+
+
+int WavesPredictor::simplePredict() {
+    int seqLen = 32;
+    int predValuesWidth = 2;
+    int analSeqWidth = 3;
+    const float dropout = 0.2f;
+    int layersCount = 2;//слоёв немного: обычно 3-4, 7-8 уже тяжело
+    int neuronsCount = 128;
+    int epochsCount = 100;
 
     auto sets = loadDataSetAlt("WAVESUSDT_19.09.01-23.02.07_4H_export.txt", 0.75f, seqLen);
     arma::mat trainData = std::get<0>(sets).rows(1, 3);
     arma::mat testData = std::get<1>(sets).rows(1, 3);
     std::cout << "Train data loaded:" << std::endl;
     normal_print(std::cout, trainData, true);
+    std::cout << "Test data loaded:" << std::endl;
     normal_print(std::cout, testData, true);
     //loaded fine
     std::cout << std::endl;
@@ -38,77 +107,103 @@ int WavesPredictor::simplePredict() {
         testData.row(i) /= max[i];
     }
 
-    std::cout << "Train data normalized:" << std::endl;
+    std::cout << "Data normalized:" << std::endl;
     normal_print(std::cout, trainData, true);
     normal_print(std::cout, testData, true);
 
-    auto trainCubes = preparePredictionCubes(trainData, analSeqCount, seqLen, predLen);
+    auto trainCubes = preparePredictionCubes(trainData, analSeqWidth, seqLen, predValuesWidth);
     arma::cube trainCube = std::get<0>(trainCubes);
     arma::cube trainLabelsCube = std::get<1>(trainCubes);
     std::cout << "Train data prepared:" << std::endl;
+    normal_print(std::cout, trainCube, 2, 0.5f, true);
+
     //trainCube.brief_print(std::cout, "Train data");
-    std::cout << "Train data (first and last slices)" << std::endl;
+   /* std::cout << "Train data (first and last slices)" << std::endl;
     normal_print(std::cout, trainCube.slice(0), true);
     normal_print(std::cout, trainCube.slice(trainCube.n_slices - 1), true);
     //trainLabelsCube.brief_print(std::cout, "Train labels");
     std::cout << "Train labels (first and last slices)" << std::endl;
     normal_print(std::cout, trainLabelsCube.slice(0), true);
     normal_print(std::cout, trainLabelsCube.slice(trainLabelsCube.n_slices - 1), true);
+    std::cout << std::endl;*/
 
-    std::cout << std::endl;
-    //RNN<MeanSquaredError, HeInitialization> model(seqLen, true /* one response per sequence */);
-    RNN<MeanSquaredError, HeInitialization> model(seqLen, false /* few responses per sequence */);
-    /*model.Add<LSTM>(H1);
-    model.Add<LinearNoBias>(predLen);*/
-    model.Add<LSTM>(H1);
-    model.Add<Dropout>(0.5);
-    model.Add<LeakyReLU>();
+    
+    auto optimizer = createOptimizer<AdamType<>>(std::cout, trainCube.n_cols, epochsCount);
+    RNN<MeanSquaredError, HeInitialization> model = createModel(std::cout, seqLen, predValuesWidth, optimizer, epochsCount,
+        neuronsCount, layersCount - 1, dropout, trainCube, trainLabelsCube);
 
-    model.Add<LSTM>(H1);
-    model.Add<Dropout>(0.5);
-    model.Add<LeakyReLU>();
+    //auto modelData = createModel(seqLen, predLen, trainCube.n_cols, 75, 2, 0.2, trainCube, trainLabelsCube);
+    //RNN<MeanSquaredError, HeInitialization> model = std::get<0>(modelData);
+    //AdamType optimizer = std::get<1>(modelData);
 
-    model.Add<LSTM>(H1);
-    model.Add<LeakyReLU>();
-    model.Add<Linear>(predLen);
-
-    std::cout << model.NumFunctions() << std::endl;
-
-    int epochs = 25;
-    int tolerance = -1;
-    double stepSize = 0.0001;
-    //double stepSize = 0.001;
-    size_t batchSize = 32;//rule of thumb with regard to batch size is that it should be as big as memory permits but at most 1% of the number of observations.
-    size_t maxPointIterations = epochs * trainCube.n_cols;
-    double meanSquareGradParamInit = 0.00000001;
-    //each epoch will be = number of points / batchSize
-
-    //StandardSGD optimizer(stepSize, batchSize, maxPointIterations, tolerance);
-    ens::AdamType<ens::AdamUpdate> optimizer(stepSize, batchSize, 0.9, 0.99, meanSquareGradParamInit, maxPointIterations, tolerance);
-
-    model.Train(trainCube, trainLabelsCube, optimizer,
-        // PrintLoss Callback prints loss for each epoch.
-        ens::PrintLoss(),
-        // Progressbar Callback prints progress bar for each epoch.
-        ens::ProgressBar(),
-        // Stops the optimization process if the loss stops decreasing
-        // or no improvement has been made. This will terminate the
-        // optimization once we obtain a minima on training set.
-        ens::EarlyStopAtMinLoss());
-
-    //TODO check deviation on normalized data, then on denormalized
-    //Denormalizinig predictions
+    //Testing model on training data
     arma::cube trainPredictions;
-    model.Predict(trainCube, trainPredictions);//2 rows, 5647 cols, 99 slices
+    model.Predict(trainCube, trainPredictions);//2 rows, 5647 cols, <seqLen> slices
+    std::cout << std::endl;
+
+    /*std::array<double, 3> percents1 = calculateDifferencePrecents(
+        trainLabelsCube.slice(trainLabelsCube.n_slices - 1),
+        trainPredictions.slice(trainPredictions.n_slices - 1));
+    std::cout << "Deviation in percents before denorm (min, avg, max): " << percents1[0] << " " << percents1[1] << " " << percents1[2] << std::endl;*/
+
+    //Denormalizinig predictions
     for (int i = 0; i < trainPredictions.n_rows; i++) {
         trainPredictions.row(i) *= max[i];
     }
 
-    normal_print(std::cout, trainPredictions.slice(0), true);
-    normal_print(std::cout, trainPredictions.slice(1), true);
-    normal_print(std::cout, trainPredictions.slice(trainPredictions.n_slices - 1), true);
-    //trainPredictions.brief_print(std::cout, "");
-    //TODO: print percental deviation
+    for (int i = 0; i < trainLabelsCube.n_rows; i++) {
+        trainLabelsCube.row(i) *= max[i];
+    }
+
+    std::cout << std::endl;
+    std::cout << "Real training labels:" << std::endl;
+    normal_print(std::cout, trainLabelsCube, 6, 0.5f, true);
+    std::cout << std::endl;
+    std::cout << "Predicted labels:" << std::endl;
+    normal_print(std::cout, trainPredictions, 6, 0.5f, true);
+
+    // Calculate MSE on prediction.
+    double trainMSEP = ComputeMSE(trainPredictions, trainLabelsCube);
+    std::cout << "Mean Squared Error on Prediction data points:= " << trainMSEP << std::endl;
+
+    std::array<double, 3> percents2 = calculateDifferencePrecents(
+        trainLabelsCube.slices(trainLabelsCube.n_slices - 3, trainLabelsCube.n_slices - 1),
+        trainPredictions.slices(trainPredictions.n_slices - 3, trainPredictions.n_slices - 1));
+    std::cout << "Deviation in percents (min, avg, max): " << percents2[0] << " " << percents2[1] << " " << percents2[2] << std::endl;
+
+
+    //Testing model on test data
+    auto testCubes = preparePredictionCubes(testData, analSeqWidth, seqLen, predValuesWidth);
+    arma::cube testCube = std::get<0>(testCubes);
+    arma::cube testLabelsCube = std::get<1>(testCubes);
+    std::cout << "Test data prepared:" << std::endl;
+    normal_print(std::cout, testCube, 2, 0.5f, true);
+
+    arma::cube testPredictions;
+    model.Predict(testCube, testPredictions);//2 rows, 5647 cols, <seqLen> slices
+
+    //Denormalizinig predictions
+    for (int i = 0; i < trainPredictions.n_rows; i++) {
+        testPredictions.row(i) *= max[i];
+    }
+
+    for (int i = 0; i < trainLabelsCube.n_rows; i++) {
+        testLabelsCube.row(i) *= max[i];
+    }
+
+    std::cout << "Real test labels:" << std::endl;
+    normal_print(std::cout, testLabelsCube, 6, 0.5f, true);
+    std::cout << "Predicted labels:" << std::endl;
+    normal_print(std::cout, testPredictions, 6, 0.5f, true);
+
+    // Calculate MSE on prediction.
+    double testMSEP = ComputeMSE(testPredictions, testLabelsCube);
+    std::cout << "Mean Squared Error on Prediction data points:= " << testMSEP << std::endl;
+
+    std::array<double, 3> percentsTest = calculateDifferencePrecents(
+        testLabelsCube.slices(testLabelsCube.n_slices - 3, testLabelsCube.n_slices - 1),
+        testPredictions.slices(testPredictions.n_slices - 3, testPredictions.n_slices - 1));
+    std::cout << "Deviation in percents (min, avg, max): " << percentsTest[0] << " " << percentsTest[1] << " " << percentsTest[2] << std::endl;
 
     return 0;
 }
