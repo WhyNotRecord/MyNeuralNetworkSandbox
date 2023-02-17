@@ -192,6 +192,8 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Cube<eT>& c
         o << "[cube size: " << c.n_rows << 'x' << c.n_cols << 'x' << c.n_slices << "]" << std::endl;
     }
     int boundSlice = slices * bound;
+    if (boundSlice < 1)
+        boundSlice = 1;
     int colWidth = 3;
 
     for (int i = 0; i < boundSlice; i++) {
@@ -229,6 +231,30 @@ template<typename eT> void normal_print(std::ostream& o, const arma::Cube<eT>& c
 }
 
 template void normal_print<double>(std::ostream& o, const arma::Cube<double> &c, uint16_t slices, float bound, bool print_size);
+
+const std::string MLPACK_CLASS_PREFIX = "class mlpack::";
+template<typename OutputLayerType,
+    typename InitializationRuleType,
+    typename MatType>
+    void print_layers(std::ostream& o, mlpack::RNN<OutputLayerType, InitializationRuleType, MatType>& model) {
+
+//void print_layers(std::ostream& o, RNN<>& model) {
+    const auto layers = model.Network();
+    int prefixLen = strlen(MLPACK_CLASS_PREFIX.c_str());
+    for (auto* l : layers) {
+        std::string typeName = typeid(*l).name();
+        if (typeName.find(MLPACK_CLASS_PREFIX) != std::string::npos) {
+            typeName = typeName.substr(prefixLen, typeName.length());
+        }
+        int bracket = typeName.find("<");
+        if (bracket != std::string::npos) {
+            typeName = typeName.substr(0, bracket);
+        }
+        o << typeName << " -> ";
+    }
+    o << "Out" << std::endl;
+}
+template void print_layers<MeanSquaredError, HeInitialization>(std::ostream& o, mlpack::RNN<MeanSquaredError, HeInitialization>& model);
 
 std::tuple<arma::mat, arma::mat> loadDataSet(std::string filename, float testDataBound) {
     std::string dataFile = std::string(filename);

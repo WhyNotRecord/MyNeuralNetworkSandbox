@@ -10,6 +10,11 @@ template<typename eT> int normal_print(std::ostream& o, const arma::Mat<eT> &m, 
 
 template<typename eT> void normal_print(std::ostream& o, const arma::Cube<eT> &c, uint16_t slices, float bound = 0.75f, bool print_size = true);
 
+template<typename OutputLayerType,
+    typename InitializationRuleType,
+    typename MatType>
+void print_layers(std::ostream& o, mlpack::RNN<OutputLayerType, InitializationRuleType, MatType> &model);
+
 std::tuple<arma::mat, arma::mat> loadDataSet(std::string filename, float testDataBound = 0.75f);
 
 std::tuple<arma::mat, arma::mat> loadDataSetAlt(std::string filename, float testDataBound = 0.75f, int crossLen = 0);
@@ -33,7 +38,6 @@ std::array<double, 3> calculateDifferencePrecents(arma::mat& control, arma::mat&
  * Function to calculate MSE for arma::cube.
  */
 double ComputeMSE(arma::cube& pred, arma::cube& Y);
-
 
 mlpack::FFN<> loadModel(std::string filename);
 

@@ -160,16 +160,16 @@ int run_lstm()
   const double STEP_SIZE = 5e-5;
 
   // Number of cells in the LSTM (hidden layers in standard terms).
-  // NOTE: you may play with this variable in order to further optimize the
-  // model (as more cells are added, accuracy is likely to go up, but training
-  // time may take longer).
-  const int H1 = 25;
-
+  const int layerSize = 25;
   // Number of data points in each iteration of SGD.
   const size_t BATCH_SIZE = 16;
-
   // Nunmber of timesteps to look backward for in the RNN.
   const int rho = 25;
+  // Number of epochs for training.
+  const int EPOCHS = 150;
+  // We have 5 input data columns and 2 output columns (target).
+  size_t inputSize = 5, outputSize = 2;
+
 
   arma::mat dataset;
 
@@ -184,16 +184,12 @@ int run_lstm()
 
   dataset = dataset.submat(1, 1, dataset.n_rows - 1, dataset.n_cols - 1);
 
-  // We have 5 input data columns and 2 output columns (target).
-  size_t inputSize = 5, outputSize = 2;
 
   // Split the dataset into training and validation sets.
   arma::mat trainData;
   arma::mat testData;
   data::Split(dataset, trainData, testData, RATIO, false);
 
-  // Number of epochs for training.
-  const int EPOCHS = 150;
 
   // Scale all data into the range (0, 1) for increased numerical stability.
   data::MinMaxScaler scale;
@@ -244,28 +240,32 @@ int run_lstm()
     }
     else
     {
-      // Model building.
-      model.Add<LSTM>(H1);
-      model.Add<Dropout>(0.5);
-      model.Add<LeakyReLU>();
+        int neuronsCount = 75;
+        int layersCount = 2;
+        float dropout = 0.2f;
+        int layerSize = neuronsCount / layersCount;
+        // Model building.
+        for (int i = 0; i < layersCount - 1; i++) {
+            /*model.Add<LSTM>(H1);
+            model.Add<LinearNoBias>(predLen);*/
+            model.Add<LSTM>(layerSize);
+            model.Add<Dropout>(dropout);
+            model.Add<LeakyReLU>();
+            //model.Add<Sigmoid>();
+            //model.Add<TanH>();
+        }
 
-      model.Add<LSTM>(H1);
-      model.Add<Dropout>(0.5);
-      model.Add<LeakyReLU>();
-
-      model.Add<LSTM>(H1);
-      model.Add<LeakyReLU>();
-      model.Add<Linear>(outputSize);
+        model.Add<LSTM>(layerSize);
+        model.Add<LeakyReLU>();
+        model.Add<Linear>(outputSize);
     }
 
     // Set parameters for the Adam optimizer.
     ens::Adam optimizer(
         STEP_SIZE,  // Step size of the optimizer.
-        BATCH_SIZE, // Batch size. Number of data points that are used in each
-                    // iteration.
+        BATCH_SIZE, // Batch size. Number of data points that are used in each iteration.
         0.9,        // Exponential decay rate for the first moment estimates.
-        0.999,      // Exponential decay rate for the weighted infinity norm
-                    // estimates.
+        0.999,      // Exponential decay rate for the weighted infinity norm estimates.
         1e-8, // Value used to initialise the mean squared gradient parameter.
         trainData.n_cols * EPOCHS, // Max number of iterations.
         1e-8,                      // Tolerance.
@@ -283,8 +283,10 @@ int run_lstm()
                 optimizer,
                 // PrintLoss Callback prints loss for each epoch.
                 ens::PrintLoss(),
+                Report(0.1),
+
                 // Progressbar Callback prints progress bar for each epoch.
-                ens::ProgressBar(),
+                //ens::ProgressBar(),
                 // Stops the optimization process if the loss stops decreasing
                 // or no improvement has been made. This will terminate the
                 // optimization once we obtain a minima on training set.
@@ -293,6 +295,7 @@ int run_lstm()
     cout << "Finished training. \n Saving Model" << endl;
     data::Save(modelFile, "LSTMMulti", model);
     cout << "Model saved in " << modelFile << endl;
+    print_layers(std::cout, model);
   }
 
   // NOTE: the code below is added in order to show how in a real application

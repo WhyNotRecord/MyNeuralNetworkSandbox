@@ -1,8 +1,23 @@
 #include "WavesPredictor.h"
 #include "Utils.h"
+#include <typeinfo>
+#include "AsciiGraphicsPrintLoss.h"
+
+#define INPUT_SEQ_LEN 32
+#define NEURONS_COUNT 128
+#define LAYERS_COUNT 2//слоёв немного: обычно 3-4, 7-8 уже тяжело
+#define DROPOUT 0.0
+#define EPOCHS_COUNT 100
+#define LEARNING_RATE 0.0005
+//rule of thumb with regard to batch size is that it should be as big as memory permits 
+// but at most 1% of the number of observations.
+#define BATCH_SIZE 32
+#define MIN_PATIENCE 5
+#define MAX_PATIENCE 10
 
 using namespace mlpack;
 using namespace ens;
+
 
 //std::tuple<RNN<MeanSquaredError, HeInitialization>, AdamType<>> createModel(size_t inputSize, size_t outputSize, 
 RNN<MeanSquaredError, HeInitialization> createModel(std::ostream& o, size_t inputSize, size_t outputSize, AdamType<> optimizer,
@@ -13,7 +28,7 @@ RNN<MeanSquaredError, HeInitialization> createModel(std::ostream& o, size_t inpu
      //RNN<MeanSquaredError, HeInitialization> model(seqLen, true /* one response per sequence */);
     RNN<MeanSquaredError, HeInitialization> model(inputSize, false /* few responses per sequence */);
 
-    //Dropout и BatchNorm (Layer Norm) между слоями
+    // Dropout и BatchNorm (Layer Norm) между слоями
     // LSTM -> Dropout -> Dense -> Softmax (вариант из лекций)
     // LSTM -> Dropout -> LSTM -> Dropout -> Dense -> Softmax (вариант из лекций)
     // Number of cells in the LSTM (hidden layers in standard terms).
@@ -22,8 +37,10 @@ RNN<MeanSquaredError, HeInitialization> createModel(std::ostream& o, size_t inpu
         /*model.Add<LSTM>(H1);
         model.Add<LinearNoBias>(predLen);*/
         model.Add<LSTM>(layerSize);
-        model.Add<Dropout>(dropout);
-        model.Add<LeakyReLU>();
+        if (dropout > 0)
+            model.Add<Dropout>(dropout);
+        //precision dramatically increased since I removed LeakyReLu after inner layers
+        //model.Add<LeakyReLU>();
         //model.Add<Sigmoid>();
         //model.Add<TanH>();
     }
@@ -32,19 +49,21 @@ RNN<MeanSquaredError, HeInitialization> createModel(std::ostream& o, size_t inpu
     model.Add<LeakyReLU>();
     model.Add<Linear>(outputSize);
 
-    o << "Model created: " << additionalLayersCount + 1 << " layers, " << neuronsCount << " neurons, " << dropout << " dropout." << std::endl;
+    o << "Model created: " << additionalLayersCount + 1 << " layers, " << (additionalLayersCount + 1) * layerSize 
+        << " neurons, " << dropout << " dropout." << std::endl;
+    print_layers(o, model);
 
-    ens::PrintLoss printCB = ens::PrintLoss();
     model.Train(trainCube, trainLabelsCube, optimizer,
-        Report(0.1),
         // PrintLoss Callback prints loss for each epoch.
-        printCB,
+        AsciiGraphicsPrintLoss(o, fminl(10, EPOCHS_COUNT / 10)),
         // Progressbar Callback prints progress bar for each epoch.
         //ens::ProgressBar(),
-        // Stops the optimization process if the loss stops decreasing
-        // or no improvement has been made. This will terminate the
-        // optimization once we obtain a minima on training set.
-        ens::EarlyStopAtMinLoss(epochsCount / 4));
+        // Stops the optimization process if the loss stops decreasing or no improvement has been made.
+        // This will terminate the optimization once we obtain a minima on training set.
+        ens::EarlyStopAtMinLoss(fmaxl(MIN_PATIENCE, fminl(epochsCount / 5, MAX_PATIENCE))),
+        // Report Callback prints final report at the end of he training
+        ens::Report(0.1)
+    );
 
     //return std::make_tuple(model, optimizer);
     return model;
@@ -55,8 +74,8 @@ OptimizerType createOptimizer(std::ostream& o, int pointsCount, int epochsCount)
     //TODO pass as arguments
     //int tolerance = -1;
     int tolerance = 1e-8;
-    double stepSize = 0.0005;//learning rate (0.0005 seems to be the best value)
-    size_t batchSize = 32;//rule of thumb with regard to batch size is that it should be as big as memory permits but at most 1% of the number of observations.
+    double stepSize = LEARNING_RATE;
+    size_t batchSize = BATCH_SIZE;
     double meanSquareGradParamInit = 0.00000001;
 
     //each epoch will be = number of points / batchSize
@@ -74,13 +93,16 @@ OptimizerType createOptimizer(std::ostream& o, int pointsCount, int epochsCount)
 
 
 int WavesPredictor::simplePredict() {
-    int seqLen = 32;
+    int seqLen = INPUT_SEQ_LEN;
+    const double dropout = DROPOUT;
+    int layersCount = LAYERS_COUNT;
+    int neuronsCount = NEURONS_COUNT;
+    int epochsCount = EPOCHS_COUNT;
     int predValuesWidth = 2;
     int analSeqWidth = 3;
-    const float dropout = 0.2f;
-    int layersCount = 2;//слоёв немного: обычно 3-4, 7-8 уже тяжело
-    int neuronsCount = 128;
-    int epochsCount = 100;
+
+    int slicesPrintCount = 3;
+    float slicesPrintRatio = 0.4f;
 
     auto sets = loadDataSetAlt("WAVESUSDT_19.09.01-23.02.07_4H_export.txt", 0.75f, seqLen);
     arma::mat trainData = std::get<0>(sets).rows(1, 3);
@@ -110,12 +132,13 @@ int WavesPredictor::simplePredict() {
     std::cout << "Data normalized:" << std::endl;
     normal_print(std::cout, trainData, true);
     normal_print(std::cout, testData, true);
+    std::cout << std::endl;
 
     auto trainCubes = preparePredictionCubes(trainData, analSeqWidth, seqLen, predValuesWidth);
     arma::cube trainCube = std::get<0>(trainCubes);
     arma::cube trainLabelsCube = std::get<1>(trainCubes);
-    std::cout << "Train data prepared:" << std::endl;
-    normal_print(std::cout, trainCube, 2, 0.5f, true);
+    /*std::cout << "Train data prepared:" << std::endl;
+    normal_print(std::cout, trainCube, 2, 0.5f, true);*/
 
     //trainCube.brief_print(std::cout, "Train data");
    /* std::cout << "Train data (first and last slices)" << std::endl;
@@ -132,19 +155,10 @@ int WavesPredictor::simplePredict() {
     RNN<MeanSquaredError, HeInitialization> model = createModel(std::cout, seqLen, predValuesWidth, optimizer, epochsCount,
         neuronsCount, layersCount - 1, dropout, trainCube, trainLabelsCube);
 
-    //auto modelData = createModel(seqLen, predLen, trainCube.n_cols, 75, 2, 0.2, trainCube, trainLabelsCube);
-    //RNN<MeanSquaredError, HeInitialization> model = std::get<0>(modelData);
-    //AdamType optimizer = std::get<1>(modelData);
-
     //Testing model on training data
     arma::cube trainPredictions;
     model.Predict(trainCube, trainPredictions);//2 rows, 5647 cols, <seqLen> slices
     std::cout << std::endl;
-
-    /*std::array<double, 3> percents1 = calculateDifferencePrecents(
-        trainLabelsCube.slice(trainLabelsCube.n_slices - 1),
-        trainPredictions.slice(trainPredictions.n_slices - 1));
-    std::cout << "Deviation in percents before denorm (min, avg, max): " << percents1[0] << " " << percents1[1] << " " << percents1[2] << std::endl;*/
 
     //Denormalizinig predictions
     for (int i = 0; i < trainPredictions.n_rows; i++) {
@@ -157,27 +171,25 @@ int WavesPredictor::simplePredict() {
 
     std::cout << std::endl;
     std::cout << "Real training labels:" << std::endl;
-    normal_print(std::cout, trainLabelsCube, 6, 0.5f, true);
+    normal_print(std::cout, trainLabelsCube, slicesPrintCount, slicesPrintRatio, true);
     std::cout << std::endl;
     std::cout << "Predicted labels:" << std::endl;
-    normal_print(std::cout, trainPredictions, 6, 0.5f, true);
+    normal_print(std::cout, trainPredictions, slicesPrintCount, slicesPrintRatio, true);
 
     // Calculate MSE on prediction.
     double trainMSEP = ComputeMSE(trainPredictions, trainLabelsCube);
-    std::cout << "Mean Squared Error on Prediction data points:= " << trainMSEP << std::endl;
+    std::cout << "Mean Squared Error on prediction data points in training set := " << trainMSEP << std::endl;
 
-    std::array<double, 3> percents2 = calculateDifferencePrecents(
-        trainLabelsCube.slices(trainLabelsCube.n_slices - 3, trainLabelsCube.n_slices - 1),
-        trainPredictions.slices(trainPredictions.n_slices - 3, trainPredictions.n_slices - 1));
-    std::cout << "Deviation in percents (min, avg, max): " << percents2[0] << " " << percents2[1] << " " << percents2[2] << std::endl;
-
+    // Calculate percental error
+    std::array<double, 3> percentsTrain = calculateDifferencePrecents(trainLabelsCube, trainPredictions);
+    std::cout << "Deviation in percents (min, avg, max): " << percentsTrain[0] << " " << percentsTrain[1] << " " << percentsTrain[2] << std::endl;
 
     //Testing model on test data
     auto testCubes = preparePredictionCubes(testData, analSeqWidth, seqLen, predValuesWidth);
     arma::cube testCube = std::get<0>(testCubes);
     arma::cube testLabelsCube = std::get<1>(testCubes);
-    std::cout << "Test data prepared:" << std::endl;
-    normal_print(std::cout, testCube, 2, 0.5f, true);
+    /*std::cout << "Test data prepared:" << std::endl;
+    normal_print(std::cout, testCube, 2, 0.5f, true);*/
 
     arma::cube testPredictions;
     model.Predict(testCube, testPredictions);//2 rows, 5647 cols, <seqLen> slices
@@ -192,17 +204,16 @@ int WavesPredictor::simplePredict() {
     }
 
     std::cout << "Real test labels:" << std::endl;
-    normal_print(std::cout, testLabelsCube, 6, 0.5f, true);
+    normal_print(std::cout, testLabelsCube, slicesPrintCount, slicesPrintRatio, true);
     std::cout << "Predicted labels:" << std::endl;
-    normal_print(std::cout, testPredictions, 6, 0.5f, true);
+    normal_print(std::cout, testPredictions, slicesPrintCount, slicesPrintRatio, true);
 
     // Calculate MSE on prediction.
     double testMSEP = ComputeMSE(testPredictions, testLabelsCube);
-    std::cout << "Mean Squared Error on Prediction data points:= " << testMSEP << std::endl;
+    std::cout << "Mean Squared Error on prediction data points in test set := " << testMSEP << std::endl;
 
-    std::array<double, 3> percentsTest = calculateDifferencePrecents(
-        testLabelsCube.slices(testLabelsCube.n_slices - 3, testLabelsCube.n_slices - 1),
-        testPredictions.slices(testPredictions.n_slices - 3, testPredictions.n_slices - 1));
+    // Calculate percental error
+    std::array<double, 3> percentsTest = calculateDifferencePrecents(testLabelsCube, testPredictions);
     std::cout << "Deviation in percents (min, avg, max): " << percentsTest[0] << " " << percentsTest[1] << " " << percentsTest[2] << std::endl;
 
     return 0;

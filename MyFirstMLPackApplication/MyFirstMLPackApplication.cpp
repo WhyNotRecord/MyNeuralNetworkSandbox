@@ -7,11 +7,14 @@
 #include "WavesPredictor.h"
 #include "lstm_stock_prediction.h"
 
+
 int main()
 {
     //std::cout << "Test classification 1\n" << testClassification();
     //std::cout << "Test classification 2\n" << myTestClassification();
     //std::cout << "Test prediction\n" << testPrediction();
+   /* for (int i = 10; i < 256; i++)
+        std::cout << unsigned char(i);*/
     WavesPredictor wp;
     std::cout << "Test prediction\n" << wp.simplePredict();
     //std::cout << "Test prediction\n" << run_lstm();

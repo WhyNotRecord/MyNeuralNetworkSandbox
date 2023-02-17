@@ -164,6 +164,8 @@
     <ClCompile Include="WavesPredictor.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AsciiGraphicsPrintLoss.h" />
+    <ClInclude Include="ascii_chart.hpp" />
     <ClInclude Include="FFNTest.h" />
     <ClInclude Include="lstm_stock_prediction.h" />
     <ClInclude Include="RNNTest.h" />
