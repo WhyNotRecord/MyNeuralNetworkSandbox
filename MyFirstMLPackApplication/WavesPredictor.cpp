@@ -178,6 +178,7 @@ int WavesPredictor::simplePredict() {
 
     // Calculate MSE on prediction.
     double trainMSEP = ComputeMSE(trainPredictions, trainLabelsCube);
+    std::cout << std::endl;
     std::cout << "Mean Squared Error on prediction data points in training set := " << trainMSEP << std::endl;
 
     // Calculate percental error
@@ -203,6 +204,7 @@ int WavesPredictor::simplePredict() {
         testLabelsCube.row(i) *= max[i];
     }
 
+    std::cout << std::endl;
     std::cout << "Real test labels:" << std::endl;
     normal_print(std::cout, testLabelsCube, slicesPrintCount, slicesPrintRatio, true);
     std::cout << "Predicted labels:" << std::endl;
@@ -210,6 +212,7 @@ int WavesPredictor::simplePredict() {
 
     // Calculate MSE on prediction.
     double testMSEP = ComputeMSE(testPredictions, testLabelsCube);
+    std::cout << std::endl;
     std::cout << "Mean Squared Error on prediction data points in test set := " << testMSEP << std::endl;
 
     // Calculate percental error

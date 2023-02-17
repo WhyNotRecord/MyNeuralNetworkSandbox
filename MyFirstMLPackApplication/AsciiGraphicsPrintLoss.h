@@ -121,7 +121,8 @@ public:
             values.erase(values.begin());
             skippingLines--;
         }
-        ascii_chart::plot(output, values, 20/*, values.size()*/);//TODO certainly make a fixed maximum
+
+        ascii_chart::plot(output, values, 20, fmaxl(values.size() + 5, 100));//TODO certainly make a fixed maximum
         output << std::endl << "Final loss: " << values.at(values.size() - 1) << std::endl;
 
 
